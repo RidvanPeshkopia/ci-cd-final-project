@@ -3,7 +3,8 @@ kind: Pipeline
 metadata:
   name: cd-pipeline
 spec:
-  workspaces: [{name: pipeline-workspace}]
+  workspaces:
+    - name: pipeline-workspace
   params:
     - name: repo-url
     - name: branch
@@ -13,34 +14,49 @@ spec:
       default: "hit-counter"
   tasks:
     - name: cleanup
-      taskRef: {name: cleanup}
-      workspaces: [{name: source, workspace: pipeline-workspace}]
+      taskRef:
+        name: cleanup
+      workspaces:
+        - name: source
+          workspace: pipeline-workspace
     - name: clone
       runAfter: [cleanup]
-      taskRef: {name: git-clone, kind: ClusterTask}
+      taskRef:
+        name: git-clone
+        kind: ClusterTask
       params:
         - name: url
           value: $(params.repo-url)
         - name: revision
           value: $(params.branch)
-      workspaces: [{name: output, workspace: pipeline-workspace}]
+      workspaces:
+        - name: output
+          workspace: pipeline-workspace
     - name: lint
       runAfter: [clone]
-      taskRef: {name: flake8}
-      workspaces: [{name: source, workspace: pipeline-workspace}]
+      taskRef:
+        name: flake8
+      workspaces:
+        - name: source
+          workspace: pipeline-workspace
       params:
         - name: args
           value: "--count --max-complexity=10 --max-line-length=127 --statistics"
     - name: tests
       runAfter: [lint]
-      taskRef: {name: nose}
-      workspaces: [{name: source, workspace: pipeline-workspace}]
+      taskRef:
+        name: nose
+      workspaces:
+        - name: source
+          workspace: pipeline-workspace
       params:
         - name: args
           value: "-v --with-spec --spec-color --with-coverage --cover-package=service"
     - name: build
       runAfter: [tests]
-      taskRef: {name: buildah, kind: ClusterTask}
+      taskRef:
+        name: buildah
+        kind: ClusterTask
       params:
         - name: IMAGE
           value: $(params.build-image)
@@ -48,10 +64,14 @@ spec:
           value: "false"
         - name: STORAGE_DRIVER
           value: "vfs"     
-      workspaces: [{name: source, workspace: pipeline-workspace}]
+      workspaces:
+        - name: source
+          workspace: pipeline-workspace
     - name: deploy
       runAfter: [build]
-      taskRef: {name: openshift-client, kind: ClusterTask}
+      taskRef:
+        name: openshift-client
+        kind: ClusterTask
       params:
         - name: SCRIPT
           value: |
@@ -59,4 +79,16 @@ spec:
             oc set image deployment/$(params.app-name) $(params.app-name)=$(params.build-image)
             oc rollout status deployment/$(params.app-name)
             oc create service clusterip $(params.app-name) --tcp=8080:8080 --dry-run=client -o yaml | oc apply -f -
-            oc expose service $(params.app-name) --port=8080 --name=$(params.app-name) --dry-run=client -o yaml | oc apply -f -
+            cat <<EOF > route.yaml
+            apiVersion: route.openshift.io/v1
+            kind: Route
+            metadata:
+              name: $(params.app-name)
+            spec:
+              to:
+                kind: Service
+                name: $(params.app-name)
+              port:
+                targetPort: 8080
+            EOF
+            oc apply -f route.yaml
