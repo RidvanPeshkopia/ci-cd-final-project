@@ -79,7 +79,7 @@ spec:
             oc set image deployment/$(params.app-name) $(params.app-name)=$(params.build-image)
             oc rollout status deployment/$(params.app-name)
             oc create service clusterip $(params.app-name) --tcp=8080:8080 --dry-run=client -o yaml | oc apply -f -
-            cat <<EOF > route.yaml
+            cat <<END | oc apply -f -
             apiVersion: route.openshift.io/v1
             kind: Route
             metadata:
@@ -90,5 +90,4 @@ spec:
                 name: $(params.app-name)
               port:
                 targetPort: 8080
-            EOF
-            oc apply -f route.yaml
+            END
